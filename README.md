@@ -5,7 +5,9 @@ _Its primary goal is gathering intelligence and secrets through contextual
 analysis of the conversations on IRC._ I almost got you! Didn't I!? :-)
 
 Jokes aside, Zebel is a simple IRC bot that whenever you talk to him, tries
-to reply with a relatively relevant message. 
+to reply with a relatively relevant message.
+If you're curious, drop by in _#zebel_ on _irc.freenode.org_ and have a chat
+with him.
 
 # Design #
 When someone in an IRC channel, talks to Zebel, e.g. sends out a public message
