@@ -22,6 +22,7 @@ import nltk
 from nltk.corpus import stopwords
 from nltk.collocations import BigramCollocationFinder
 import random
+import re
 
 from config import conf
 from db import Quotes
@@ -31,6 +32,8 @@ __author__ = 'Bahman Movaqar'
 
 _db = Quotes()
 _MIN_SCORE = conf['QUERY']['min-score']
+# regex for matching all punctuations
+_PUNCT_RE = '([' + '|'.join([r'\%s' % p for p in string.punctuation]) + '])+'
 _history = dict() # A dictionary of nick->NickHistory
 
 
@@ -85,13 +88,14 @@ def _sanitise(input):
                 'they', 'their', 'your', 'mine', 'she', 'he', 'it', 'its',
                 "'re", "'s", "it's", 'know', 'tell', 'say', 'sure', "'m", "'ll",
                 "'t"]
-    stop_words = [w.lower() for w in set(stopwords.words('english') + trivials)]
-    words = [w.lower() for w in nltk.tokenize.word_tokenize(input)]
-
     def _keep(w):
         return (w not in stop_words) and (w not in string.punctuation) \
-               and (not w.isnumeric())
+               and (not w.isnumeric()) and (len(w) > 1)
+    def _no_punct(w):
+        return re.sub(_PUNCT_RE, '', w)
 
+    stop_words = [w.lower() for w in set(stopwords.words('english') + trivials)]
+    words = [_no_punct(w.lower()) for w in nltk.tokenize.word_tokenize(input)]
     return [w for w in words if _keep(w)]
 
 
