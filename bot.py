@@ -58,7 +58,7 @@ class ZebelBot(SimpleIRCClient):
     def on_pubmsg(self, conn, evt):
         self._update_ts()
         full_msg = evt.arguments[0]
-        pattern = '%s[\:\,\>]\s+(.+)' % self.nick
+        pattern = '%s[\:|\,|\>| |]\s*(.+)' % self.nick
         match = re.match(pattern, full_msg)
         if match:
             msg = match.group(1)
