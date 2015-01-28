@@ -43,7 +43,7 @@ class Quotes(object):
             qs = ' OR '.join(words) + ' '
             if support:
                 qs += ' OR '.join(support)
-        return 'text:(' + qs + ')'
+        return 'text:(' + qs + ') OR support:(' + qs + ')'
 
 
     def match_fetch_general_quotes(self, input, support, minscore=0.8):
