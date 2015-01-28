@@ -185,51 +185,82 @@ class NickHistory:
     """
 
     _TS_THRESHOLD = int(conf['ZEBEL']['annoy-time'])
+    _HISTORY_VALID = int(conf['ZEBEL']['history-valid'])
 
     def __init__(self, nick, words=()):
-        self.nick = nick
-        self.words = deque(words, maxlen=int(conf['ZEBEL']['history-words']))
-        self.timestamps = deque([], maxlen=int(conf['ZEBEL']['annoy-count']))
+        self._nick = nick
+        self._words = deque(words, maxlen=int(conf['ZEBEL']['history-words']))
+        self.ـtimestamps = deque([], maxlen=int(conf['ZEBEL']['annoy-count']))
 
     def add_words(self, words):
         for w in words:
-            self.words.append(w)
+            self._words.append(w)
 
     def add_timestamp(self, ts):
-        self.timestamps.append(ts)
+        self.ـtimestamps.append(ts)
 
-    def threshold_ok(self):
-        if len(self.timestamps) < 3:
+    def threshold_ok(self, timestamp):
+        n_ts = len(self.ـtimestamps)
+        if n_ts < 2:
             return True
-        delta = self.timestamps[2] - self.timestamps[0]
-        return delta >= NickHistory._TS_THRESHOLD
+        else:
+            delta = timestamp - self.ـtimestamps[n_ts-1]
+            return delta >= NickHistory._TS_THRESHOLD
+
+    def history_valid(self, timestamp):
+        """ Checks if the history words are valid for a given timestamp.
+
+        :param timestamp: the given timestamp
+        :return: True if history is valid, False otherwise (obviously!)
+        """
+        n_ts = len(self.ـtimestamps)
+        if not n_ts:
+            return True
+        else:
+            last = self.ـtimestamps[n_ts-1]
+            return timestamp - last < NickHistory._HISTORY_VALID
+
+    def nick(self): return self._nick
+
+    def timestamps(self): return tuple(self.ـtimestamps)
+
+    def words(self):
+        """ Returns history words. If more than "history-valid" seconds have
+        passed since the last interaction, resets history words.
+
+        :return: a tuple of history words
+        """
+        if self.history_valid(time_in_sec()):
+            return tuple(self._words)
+        else:
+            self._words.clear()
+            return ()
 
 
-def reply(nick, input):
+def reply(nick, text):
     """Prepares a proper reply to an input msg.
     First it tries to find a relevant quote using 'match' search. If none is
     found it attempts a 'fuzzy' search. If 'fuzzy' fails as well, it falls back
     to a randomly selected quote from the 'confused' category.
 
     :param nick: IRC nick to reply to
-    :param input: input msg
+    :param text: input msg
     :return: a reply quote
     """
     global _history
     nick_hist = _history.get(nick, NickHistory(nick))
-    nick_hist.add_timestamp(time_in_sec())
-    if nick_hist.threshold_ok():
+    if nick_hist.threshold_ok(time_in_sec()):
         _reply = ''
-        all_synonyms = TPU.tag_and_synonyms(input)
+        all_synonyms = TPU.tag_and_synonyms(text)
         important_words = list(itertools.chain(*all_synonyms))
         query = ' '.join(important_words)
         if query:
             match_results = _db.match_fetch_general_quotes(
-                query, list(nick_hist.words), _MIN_SCORE)
+                query, list(nick_hist.words()), _MIN_SCORE)
             if match_results:
                 _reply = random.choice(match_results)
             else:
-                fuzzy_results = _db.fuzzy_fetch_general_quotes(input,
+                fuzzy_results = _db.fuzzy_fetch_general_quotes(text,
                                                                _MIN_SCORE)
                 if fuzzy_results:
                     _reply = random.choice(fuzzy_results)
@@ -240,6 +271,7 @@ def reply(nick, input):
         nick_hist.add_words(important_words)
     else:
         _reply = random.choice(_db.fetch_annoyed_quotes())
+    nick_hist.add_timestamp(time_in_sec())
     _history[nick] = nick_hist
     return '%s: %s' % (nick, _reply)
 
