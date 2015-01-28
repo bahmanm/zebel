@@ -2,7 +2,7 @@
 "ZEBEL" (pronounced like "rebel") is an intelligent IRC bot.
 
 _Its primary goal is gathering intelligence and secrets through contextual
-analysis of the conversations on IRC._ I almost got you! Didn't I!? :-)
+analysis of the conversations on IRC._ I almost got you! :-)
 
 Jokes aside, Zebel is a simple IRC bot that whenever you talk to him, tries
 to reply with a relatively relevant message.
@@ -15,14 +15,17 @@ like `zebel: greetings`, Zebel tries to make sense of your message as below:
 
   1. It first sanitises the message; removing stop words, punctuations and 
      unimportant words.
-  2. The sanitised text is fed into natural language processing to find the most
-     important words in the text.
-  3. Performs a full-text search on the DB for the most important words.
-  4. If anything relevant enough is found, returns it.
-  5. If there's no relevant enough answer in the database, it tries a fuzzy
-     search for the same words.
-  6. If fuzzy search finds a good enough answer, it is returned.
-  7. Even if fuzzy search can't help, Zebel simply gives up on finding a
+  2. The sanitised text is fed into natural language processing to determine
+     each word's role in the sentence.
+  3. For each word and its given role, the list of synonyms are extracted from
+     NLP database.
+  4. The words along with their synonyms are forged into a query.
+  5. A full-text search on the DB is performed.
+  6. If anything relevant enough is found, it is returned.
+  7. If there's no relevant enough answer in the database, a fuzzy
+     search for the original message is performed.
+  8. If fuzzy search finds a good enough answer, it is returned.
+  9. Even if fuzzy search can't help, Zebel simply gives up on finding a
      reasonable answer and instead just picks up a message from the "confused"
      category.
 
