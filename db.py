@@ -40,7 +40,7 @@ class Quotes(object):
         qs = input
         if len(input.split(' ')) > 1:
             words = input.split(' ')
-            qs = '^4 OR '.join(words) + '^4 '
+            qs = ' OR '.join(words) + ' '
             if support:
                 qs += ' OR '.join(support)
         return 'text:(' + qs + ')'

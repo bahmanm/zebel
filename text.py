@@ -14,13 +14,15 @@
 
 """ The text processing heart of zebel; this is HAL's brain. """
 import string
-from itertools import chain
 from collections import deque
 import time
+import itertools
 
 import nltk
 from nltk.corpus import stopwords
-from nltk.collocations import BigramCollocationFinder
+from nltk.tag import UnigramTagger
+from nltk.corpus import wordnet
+from nltk.corpus import brown
 import random
 import re
 
@@ -32,13 +34,147 @@ __author__ = 'Bahman Movaqar'
 
 _db = Quotes()
 _MIN_SCORE = conf['QUERY']['min-score']
-# regex for matching all punctuations
-_PUNCT_RE = '([' + '|'.join([r'\%s' % p for p in string.punctuation]) + '])+'
-_history = dict() # A dictionary of nick->NickHistory
+_history = dict()  # A dictionary of nick->NickHistory
+
+time_in_sec = lambda: int(round(time.time()))
 
 
-def time_in_sec():
-    return int(round(time.time()))
+class TPU:
+    """ Text Processing Unit. """
+
+    # Part-of-Speech tagger trained with all treebank sentences
+    _tagger = UnigramTagger(brown.tagged_sents())
+
+    # regex of all punctuation symbols
+    re_puncts = '([%s])+' % '|'.join([r'\%s' % p for p in string.punctuation])
+
+    # regex of all punctuation symbols that end a sentence
+    re_puncts_sent = '([\.|\;|\!|\?|\-\-])+'
+
+    # set of all English stop words all in lower case
+    stopwords = [w.lower() for w in set(stopwords.words('english'))]
+
+
+    @staticmethod
+    def is_stopword(w):
+        """ Checks if a given word is a stop word.
+
+        :param w: the given word
+        :return: True if input is stop word, False otherwise
+        """
+        return w.lower() in TPU.stopwords
+
+
+    @staticmethod
+    def sentences(text):
+        """ Breaks a given input into sentences and returns them in all lower
+        case.
+
+        :param text: a free form input string
+        :return: an array of sentences sans empty ones
+        """
+        _result = []
+        for sentence in re.split(TPU.re_puncts_sent, text):
+            no_punct = re.sub(TPU.re_puncts, '', sentence)
+            if len(no_punct):
+                _result.append(no_punct.strip().lower())
+        return _result
+
+    @staticmethod
+    def tag_one(sentence):
+        """ Tags a given input sentence and returns it sans stop words.
+
+        :param sentence: the input sentence as a string
+        :return: an array of binary tuples (word, type)
+        """
+        tuples = TPU._tagger.tag(nltk.tokenize.word_tokenize(sentence))
+        _result = []
+        for t in tuples:
+            if len(t[0]) and not TPU.is_stopword(t[0]):
+                _result.append(t)
+        return _result
+
+
+    @staticmethod
+    def tag_all(text):
+        """ Tags all the sentences in a given text.
+
+        :param text: a free form text
+        :return: an array with one element per each sentence; each element is
+            an array itself of non-stop words tagged
+        """
+        sentences = TPU.sentences(text)
+        return [TPU.tag_one(sentence) for sentence in sentences]
+
+
+    @staticmethod
+    def tag_type(tag):
+        """ Maps a tag type from Brown/TreeBank to WordNet.
+
+        :param tag: tag type as string
+        :return: a one character type or None if non-mappable
+        """
+        if not tag:
+            return 'v'
+        elif re.match(r'VB\w*', tag):
+            return 'v'
+        elif re.match(r'NN\w*', tag) or re.match(r'PN', tag):
+            return 'n'
+        elif re.match(r'JJ\w*', tag):
+            return 'a'
+        elif re.match(r'RB\w*', tag):
+            return 'r'
+        else:
+            return None
+
+
+    @staticmethod
+    def synonyms(word_tag):
+        """ Finds all the synonyms of a given word with a given type.
+
+        :param word_tag: a tuple (word, tag)
+        :return: an array of all the synonyms of the given word, incl. the word
+        """
+        _type = TPU.tag_type(word_tag[1])
+        root = wordnet.morphy(word_tag[0])
+        if not root:
+            root = word_tag[0]
+
+        _result = set()
+        _result.add(root)
+        if _type:
+            syn_sets = wordnet.synsets(root, pos=_type)
+            for syn_set in syn_sets:
+                syn = syn_set.name().split('.')[0]
+                if not '_' in syn:
+                    _result.add(syn)
+        return list(_result)
+
+
+    @staticmethod
+    def all_synonyms(tagged_sentences):
+        """ Finds synonyms for all the words in all the already "tagged"
+        sentences.
+
+        :param tagged_sentences: an array of tagged sentences (each as an array)
+        :return: an array of arrays containing all the synonyms of all the words
+        """
+        _result = []
+        for sent in tagged_sentences:
+            for word in sent:
+                _result.append(TPU.synonyms(word))
+        return _result
+
+
+    @staticmethod
+    def tag_and_synonyms(text):
+        """ Tags and finds synonyms for all the sentences in a given text.
+
+        :param text: a free form text
+        :return: an array of arrays containing all the synonyms of all the words
+        """
+        tagged = TPU.tag_all(text)
+        return TPU.all_synonyms(tagged)
 
 
 class NickHistory:
@@ -69,90 +205,6 @@ class NickHistory:
         return delta >= NickHistory._TS_THRESHOLD
 
 
-def _count_words(input):
-    """Counts the number of words in a given input string.
-
-    :param input: the given free-form input string
-    :return: number of words
-    """
-    return len(nltk.tokenize.word_tokenize(input))
-
-
-def _sanitise(input):
-    """ Sanitises an input string by removing punctuations and stop words.
-
-    :param input: the given input string
-    :return: an array of important words in the given input
-    """
-    trivials = ['what', 'who', 'why', 'when', 'how', 'me', 'you', 'his', 'her',
-                'they', 'their', 'your', 'mine', 'she', 'he', 'it', 'its',
-                "'re", "'s", "it's", 'know', 'tell', 'say', 'sure', "'m", "'ll",
-                "'t"]
-    def _keep(w):
-        return (w not in stop_words) and (w not in string.punctuation) \
-               and (not w.isnumeric()) and (len(w) > 1)
-    def _no_punct(w):
-        return re.sub(_PUNCT_RE, '', w)
-
-    stop_words = [w.lower() for w in set(stopwords.words('english') + trivials)]
-    words = [_no_punct(w.lower()) for w in nltk.tokenize.word_tokenize(input)]
-    return [w for w in words if _keep(w)]
-
-
-def _n_important_words(n_words):
-    """ Calculates the number of most important words based on a given number of
-     (sanitised) words. It's no rocket science. Just a dumb if-else.
-
-    :param n_words: the given number of words
-    :return: number of most important words
-    """
-    if 0 < n_words <= 5:
-        return 3
-    elif 6 <= n_words <= 10:
-        return 4
-    else:
-        return 5
-
-
-def _important_words(words):
-    """ Extracts important words out of a given array of words.
-
-    :param words: the given array of words; e.g. out of _filter_stopwords()
-    :return: an array of most important words
-    """
-    if len(words) < 2:
-        return words
-    n = _n_important_words(len(words))
-    finder = BigramCollocationFinder.from_words(words)
-    all_words = list(
-        chain.from_iterable(
-            [[w] * n for (w, n) in finder.word_fd.most_common()]))
-    if len(all_words) <= n:
-        return all_words
-    else:
-        return all_words[0:n]
-
-
-def _build_query(input):
-    """Builds the query string of the most important words based on a given raw
-    input.
-
-    :param input: the given input
-    :return: a tuple;
-        0 -> query string of the most important words in the given input
-        1 -> a list of important words
-    """
-    query = ''
-    query_words = _sanitise(input)
-    important_words = []
-    if len(query_words) >= 2:
-        important_words = _important_words(query_words)
-        query = ' '.join(important_words)
-    else:
-        query = ' '.join(query_words)
-    return (query, important_words)
-
-
 def reply(nick, input):
     """Prepares a proper reply to an input msg.
     First it tries to find a relevant quote using 'match' search. If none is
@@ -168,14 +220,17 @@ def reply(nick, input):
     nick_hist.add_timestamp(time_in_sec())
     if nick_hist.threshold_ok():
         _reply = ''
-        (query, important_words) = _build_query(input)
+        all_synonyms = TPU.tag_and_synonyms(input)
+        important_words = list(itertools.chain(*all_synonyms))
+        query = ' '.join(important_words)
         if query:
             match_results = _db.match_fetch_general_quotes(
                 query, list(nick_hist.words), _MIN_SCORE)
             if match_results:
                 _reply = random.choice(match_results)
             else:
-                fuzzy_results = _db.fuzzy_fetch_general_quotes(query, _MIN_SCORE)
+                fuzzy_results = _db.fuzzy_fetch_general_quotes(input,
+                                                               _MIN_SCORE)
                 if fuzzy_results:
                     _reply = random.choice(fuzzy_results)
                 else:
