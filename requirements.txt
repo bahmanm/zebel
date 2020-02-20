@@ -3,7 +3,7 @@ irc==11.0.1
 jaraco.timing==1.1
 jaraco.util==10.7.1
 more-itertools==2.2
-nltk==3.0.1
+nltk==3.4.5
 numpy==1.9.1
 six==1.9.0
 urllib3==1.24.2
